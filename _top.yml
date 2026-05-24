@@ -1,0 +1,22 @@
+publicKeyPath: name@test.pub
+subnets:
+- members:
+  - address: 192.168.10.10
+    vmName: Tokyo_EC2.Node0
+  - address: 192.168.10.11
+    vmName: Sydney_EC2.Node1
+  name: s1
+  netmask: '24'
+  subnet: 192.168.10.0
+topologies:
+- cloudProvider: EC2
+  domain: Tokyo_EC2
+  scaledFrom: null
+  subTopologyClass: null
+  topology: Tokyo_EC2
+- cloudProvider: EC2
+  domain: Sydney_EC2
+  scaledFrom: null
+  subTopologyClass: null
+  topology: Sydney_EC2
+userName: huan

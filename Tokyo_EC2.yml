@@ -1,0 +1,10 @@
+SEngineClass: null
+VMs:
+- CPU: '1'
+  Mem: '0.5'
+  OStype: Ubuntu 20.04
+  name: Node0
+  nodeType: t2.nano
+  script: name@init.sh
+  type: null
+extraInfo: null
