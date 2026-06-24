@@ -1,199 +1,166 @@
-# 多云中转数据传输原型
+# Multi-Cloud Relay Data Transmission Prototype
+This project implements a multi-cloud relay transmission prototype. Via the front-end GUI, users select the data source, destination, and transmission scheme. Cloud resource orchestration tools are leveraged to create intermediate relay nodes. The system slices data files stored in `db/A`, distributes data chunks to relay nodes through multi-stream parallel transmission, and finally reassembles all chunks on the receiving side into complete files saved under `db/C`. Selected relay scripts integrate OpenCV-based vehicle detection pipelines for video processing.
 
-本项目是一个多云中转传输原型。系统通过前端界面选择起点、终点和传输方案，使用云资源编排工具创建中间节点，再把 `db/A` 中的数据切片、多路发送到中转节点，最终在接收端合并到 `db/C`。部分中转脚本还集成了 OpenCV 车辆检测处理逻辑。
+## Core Function Overview
+1. Transmission Path Evaluation
+Calculate three types of transmission schemes based on regional cloud pricing, available bandwidth, and inter-region link throughput: lowest-cost paths, low-cost paths meeting minimum throughput constraints, and maximum-throughput priority paths.
+2. Graphical User Interface
+Built with PyQt5; supports selection of source/destination regions, target files for transmission, and receiving server public IP addresses.
+3. Cloud Resource Orchestration
+Provision AWS EC2 and Alibaba Cloud virtual machines via CloudsStorm YAML configuration files, and automatically execute initialization scripts on newly created cloud nodes.
+4. Multi-Stream Parallel Transmission
+The sender splits source files into ~512 KB fixed-size chunks and dispatches chunks to multiple relay nodes using multi-threaded workers.
+5. Resume Interrupted Transfers
+The receiver scans existing partial chunks under `cache/<filename>/` and replies to the sender with the serial number of the next missing chunk to resume incomplete transfers.
+6. File Reassembly
+After receiving all fragmented data, the receiver sorts chunks by sequence number and merges them into a complete file stored at `db/C/<filename>`.
+7. Video Stream Processing
+Scripts `b1.py` to `b4.py` embed vehicle detection logic using the `cars.xml` Haar cascade classifier and support processed video export.
 
-## 功能概览
-
-- 传输路径评估：根据区域价格、带宽和链路速率计算低成本、速率约束、最高速等方案。
-- 图形界面：使用 PyQt5 选择起点、终点、待传输文件和接收端 IP。
-- 云资源编排：通过 CloudsStorm 的 YAML 配置创建 EC2/Aliyun 节点，并执行节点初始化脚本。
-- 多路传输：发送端把文件切成 512 KB 左右的数据片，多线程分发到多个中转节点。
-- 断点续传：接收端检查 `cache/<filename>/` 中已有分片，向发送端返回下一个缺失分片编号。
-- 文件合并：接收端保存分片后按序合并到 `db/C/<filename>`。
-- 视频处理：`b1.py`、`b2.py`、`b3.py`、`b4.py` 中包含基于 `cars.xml` 的车辆检测和视频输出逻辑。
-
-## 目录结构
-
+## Project Directory Structure
 ```text
 .
-├── qianduan.py                 # PyQt5 前端入口，负责方案选择和启动传输流程
-├── example.py                  # 路径方案计算示例入口
-├── node_select.py              # 路径/节点选择算法
-├── node_select_1.py            # 节点价格、带宽、链路速率数据填充
-├── 1_a.py                      # A 端发送脚本，读取 db/A/A.zip 并多线程发送
-├── 3_c.py                      # C 端接收服务，保存分片并合并文件
-├── b.py                        # 基础中转节点，监听 4026 并转发到 C 端 6000
-├── b1.py ~ b4.py               # 带车辆检测处理的中转节点变体
-├── duan.py                     # 断点续传握手转发脚本
-├── get_ip.py                   # 从 CloudsStorm 日志提取公网 IP 到 output.txt
-├── conf/                       # A/B/C 端配置和日志配置
-├── lib/common.py               # 日志初始化工具
+├── qianduan.py                 # PyQt5 front-end entry; triggers full transmission workflow after scheme selection
+├── example.py                  # Entry script for path planning and transmission scheme calculation demos
+├── node_select.py              # Core algorithm for transmission path and relay node selection
+├── node_select_1.py            # Populates static metadata: cloud node pricing, bandwidth limits, inter-region link throughput
+├── 1_a.py                      # Sender-side script; reads source file db/A/A.zip and dispatches chunks via multi-threading
+├── 3_c.py                      # Receiver service; stores fragmented data and executes full file reassembly
+├── b.py                        # Base relay node service; listens on port 4026 and forwards all data to the receiver’s port 6000
+├── b1.py ~ b4.py               # Extended relay variants integrated with OpenCV vehicle detection pipelines
+├── duan.py                     # Forwarding script dedicated to resume-transfer handshake signaling
+├── get_ip.py                   # Parses CloudsStorm orchestration logs and exports relay node public IPs to output.txt
+├── conf/                       # Configuration files for sender(A), relay(B), receiver(C), and logging rules
+├── lib/common.py               # Reusable logging initialization utility module
 ├── db/
-│   ├── A/                      # 发送端数据目录
-│   └── C/                      # 接收端输出目录
-├── cache/                      # 接收端临时分片目录
-├── log/                        # Python 运行日志
+│   ├── A/                      # Local storage directory for source files on the sending side
+│   └── C/                      # Output directory for fully reassembled files on the receiving side
+├── cache/                      # Temporary storage for incomplete file chunks on the receiver
+├── log/                        # Runtime log directory for all Python modules
 ├── cloudsstorm/
-│   ├── CloudsStorm-2.0.jar     # 云资源编排工具
-│   ├── App/infrasCode.yml      # CloudsStorm 执行流程配置
-│   └── Infs/Topology/          # 云拓扑、虚拟机和初始化脚本
-├── cars.xml                    # OpenCV 车辆检测级联分类器
-└── data.txt                    # 前端写入的路径和接收端 IP
+│   ├── CloudsStorm-2.0.jar     # Java-based cloud resource orchestration engine
+│   ├── App/infrasCode.yml      # Main YAML workflow definition for CloudsStorm provisioning
+│   └── Infs/Topology/          # Cloud topology definitions, VM provision templates, and node initialization scripts
+├── cars.xml                    # Haar cascade classifier pre-trained for OpenCV vehicle detection
+└── data.txt                    # Intermediate file storing user-selected path parameters and receiver IP exported by the GUI
 ```
 
-## 运行环境
-
-建议使用 Python 3.9+。仓库中没有 `requirements.txt`，按源码导入关系需要安装以下依赖：
-
+## Runtime Environment
+Python 3.9 or higher is recommended. No pre-generated `requirements.txt` is provided in the repository; install core dependencies matching import statements with the following command:
 ```bash
 pip install PyQt5 PyYAML filelock opencv-python numpy matplotlib
 ```
-
-如果运行 `ccccc.py` 中的深度学习道路检测逻辑，还需要额外准备：
-
+If executing deep learning road detection logic inside `ccccc.py`, install additional AI dependencies:
 ```bash
 pip install torch torchvision
 ```
+This script references custom network modules `networks.unet`, `networks.dunet`, and `networks.dinknet.` The `networks/` folder and pre-trained weight files are not included in the repository, which will throw runtime errors if missing.
 
-同时该脚本引用了 `networks.unet`、`networks.dunet`、`networks.dinknet`，当前目录未包含 `networks/` 模块，直接运行会报错，需要补齐模型代码和权重。
+### Dependencies for Cloud Orchestration
+1. Java Runtime Environment to execute the orchestration JAR `cloudsstorm/CloudsStorm-2.0.jar`
+2. Valid cloud account credentials configured under `cloudsstorm/Infs/UC/` and `cloudsstorm/Infs/UD/`
+3. Cloud virtual machines must allow inbound Python services and open designated TCP ports for data transmission; nodes must support running commands such as `python3 b.py -ip <RECEIVER_PUBLIC_IP>`
 
-云资源编排依赖：
-
-- Java 运行环境，用于执行 `cloudsstorm/CloudsStorm-2.0.jar`。
-- CloudsStorm 所需云账号配置，见 `cloudsstorm/Infs/UC/` 与 `cloudsstorm/Infs/UD/`。
-- 云端虚拟机需要能执行 `python3 b.py -ip <接收端IP>` 等命令，并开放相应端口。
-
-## 典型使用流程
-
-### 1. 启动接收端
-
-在最终接收机器上运行：
-
+## Standard End-to-End Workflow
+### Step 1: Launch the Receiver Service
+Execute this command on the target receiving server:
 ```bash
 python 3_c.py
 ```
-
-默认监听：
-
-- `0.0.0.0:6000`
-- 功能码 `1`：断点续传查询
-- 功能码 `0`：接收分片数据
-
-接收完成后，文件会合并到：
-
+Default listening address: `0.0.0.0:6000`
+- Function Code `1`: Handles resume-transfer chunk existence queries
+- Function Code `0`: Receives raw file data chunks
+After full transmission completes, the merged complete file is saved to:
 ```text
 db/C/<filename>
 ```
 
-### 2. 通过前端选择方案
-
-运行：
-
+### Step 2: Select Transmission Scheme via Front-End GUI
+Launch the graphical interface:
 ```bash
 python qianduan.py
 ```
+The GUI automates the following sequence:
+1. User selects source cloud region and destination cloud region
+2. Calls `example.road()` to generate three distinct transmission schemes
+3. User selects the source file to transmit and inputs the receiver’s public IP
+4. Serializes all user selections into the intermediate file `data.txt`
+5. Invokes `cloudsstorm/Infs/Topology/yml.py` to auto-generate cloud topology YAML templates
+6. Executes CloudsStorm JAR to provision cloud relay nodes and deploy relay initialization scripts
+7. Extracts all relay node public IP addresses from orchestration logs
+8. Triggers the sender script `1_a.py` to start parallel chunk transmission
 
-界面会执行以下逻辑：
-
-1. 选择起点区域和终点区域。
-2. 调用 `example.road()` 生成三类传输方案。
-3. 选择待传输文件和接收端 IP。
-4. 把选择结果写入 `data.txt`。
-5. 调用 `cloudsstorm/Infs/Topology/yml.py` 生成拓扑 YAML。
-6. 调用 `CloudsStorm-2.0.jar` 创建云节点并执行中转节点脚本。
-7. 从 CloudsStorm 日志提取中转节点公网 IP。
-8. 调用 `1_a.py` 发送文件。
-
-### 3. 直接运行发送端
-
-如果已经有中转节点 IP，可以跳过前端，直接运行：
-
+### Step 3: Direct Sender Launch (Bypassing GUI)
+If relay node IP addresses are already known, skip the front-end and run the sender directly:
 ```bash
-python 1_a.py -n 2 -ip <node-ip-1> <node-ip-2>
+python 1_a.py -n 2 -ip <relay-node-ip-1> <relay-node-ip-2>
 ```
-
-当前 `1_a.py` 默认发送：
-
+By default, `1_a.py` transmits the fixed source file:
 ```text
 db/A/A.zip
 ```
+The sender first establishes a handshake connection to port 6000 of the receiver to query completed chunks for resume support, then connects to port 4026 of every relay node to dispatch data chunks.
 
-发送端会先连接 C 端的 `6000` 端口做断点查询，然后连接每个中转节点的 `4026` 端口分发数据。
-
-### 4. 启动中转节点
-
-基础中转：
-
+### Step 4: Start Relay Node Services
+#### Base Relay Node (No Video Processing)
 ```bash
-python b.py -ip <C端公网IP>
+python b.py -ip <RECEIVER_PUBLIC_IP>
 ```
+Default behavior:
+- Listens for incoming sender connections on `0.0.0.0:4026`
+- Establishes an outbound connection to `<RECEIVER_PUBLIC_IP>:6000` upon receiving data
+- Forwards file header metadata and all raw data chunks to the final receiver
 
-默认行为：
+#### Vehicle-Detection Extended Relays
+Use `b1.py`, `b2.py`, `b3.py`, or `b4.py` for video processing pipelines. These scripts require pre-created local directories `received_images/` and `result_mp4s/` to store detection outputs before execution.
 
-- 监听 `0.0.0.0:4026`
-- 收到 A 端数据后连接 `<C端公网IP>:6000`
-- 转发文件头和分片数据
+## Path Planning Model Details
+`example.py` contains static metadata tables: available cloud regions, per-region VM pricing, maximum egress bandwidth, and pre-measured inter-region link throughput matrices. The core function `road(source, destination)` returns three alternative transmission plans:
+1. `result1`: Minimum monetary cost transmission path
+2. `result2`: Lowest-cost path satisfying user-specified minimum throughput constraints
+3. `result3`: Maximum throughput priority path, ignoring cost overhead
 
-带车辆检测的中转节点可使用 `b1.py`、`b2.py`、`b3.py`、`b4.py`，但这些脚本对本地目录和端口有更多假设，运行前需要确认 `received_images/`、`result_mp4s/` 等目录存在。
+Calculation logic is split across two modules:
+- `node_select.py`: Main optimization logic for path cost and throughput tradeoff
+- `node_select_1.py`: Static data lookup table for cloud infrastructure parameters
 
-## 路径选择模型
-
-`example.py` 内置了区域列表、云服务器价格、最大带宽和区域间测速矩阵。`road(source, des)` 会返回：
-
-- `result1`：最低成本方案。
-- `result2`：满足最低速率约束的低成本方案。
-- `result3`：按速率优先的方案。
-
-计算逻辑位于：
-
-- `node_select.py`
-- `node_select_1.py`
-
-数据量默认写死为：
-
+The default data volume constant is hardcoded as:
 ```python
 data_size = 56900 * 8
 ```
+Replace this value with the actual target file byte size before running path evaluation for real-world transmission tasks.
 
-如需匹配真实文件大小，应在调用前按文件体积重新计算。
-
-## 配置说明
-
-`conf/settings_a.py`、`conf/settings_b.py`、`conf/settings_c.py` 分别定义 A/B/C 端默认目录和端口：
-
+## Global Configuration Specifications
+Files `conf/settings_a.py`, `conf/settings_b.py`, `conf/settings_c.py` define core static parameters for sender, relay, and receiver respectively:
 ```python
 IP = "127.0.0.1"
 PORT = 8000 / 8005
-DB_PATH = <project>/db
-CLIENT_DB_PATH = <project>/db/A|B|C
-SERVER_DB_PATH = <project>/db/A|B|C
-LOG_PATH = <project>/log
+DB_PATH = <PROJECT_ROOT>/db
+CLIENT_DB_PATH = <PROJECT_ROOT>/db/A|B|C
+SERVER_DB_PATH = <PROJECT_ROOT>/db/A|B|C
+LOG_PATH = <PROJECT_ROOT>/log
 ```
-
-实际传输脚本中还有一些独立端口：
-
-| 脚本 | 默认端口 | 用途 |
+Additional dedicated TCP ports hardcoded within individual transmission scripts are listed below:
+| Script File | Default Listening Port | Function Description |
 | --- | --- | --- |
-| `3_c.py` | `6000` | C 端接收和断点查询 |
-| `b.py` | `4026` | 基础中转节点 |
-| `b1.py` | `4026` | 车辆检测中转变体 |
-| `b2.py`、`b3.py`、`b4.py` | `4027` | 车辆检测中转变体 |
-| `duan.py` | `5026` | 断点续传握手转发 |
+| `3_c.py` | `6000` | Receiver service for chunk reception and resume handshake |
+| `b.py` | `4026` | Standard base relay data forwarding service |
+| `b1.py` | `4026` | Relay service integrated with vehicle detection pipeline |
+| `b2.py`, `b3.py`, `b4.py` | `4027` | Extended video-processing relay variants |
+| `duan.py` | `5026` | Dedicated forwarding service for resume-transfer signaling |
 
-## 已知限制和注意事项
+## Known Limitations & Critical Warnings
+1. Hardcoded absolute Windows file paths exist in multiple core scripts (e.g. `C:\Users\22748\Desktop\chuanshu`). Modify hardcoded paths in `qianduan.py`, `get_ip.py`, and `cloudsstorm/Infs/Topology/yml.py` to match the target deployment environment before cross-platform execution.
+2. `1_a.py` embeds a static receiver endpoint `35.76.1.177:6000`. Rewrite this as a command-line argument parameter or load it from configuration files for flexible cross-environment deployment.
+3. Sensitive private key files such as `cloudsstorm/Infs/Topology/*/id_rsa` are stored in the repository. Delete and regenerate all cloud authentication keys before code sharing or formal submission.
+4. The directory `cloudsstorm/Infs/Topology/venv/` stores a pre-built Python virtual environment; exclude this folder from version control systems.
+5. Runtime-generated artifacts including `log/`, `cache/`, `__pycache__/`, and output video files such as `output.mp4` can be safely deleted to clean workspace storage.
+6. No automated unit test suites are implemented for core path planning and transmission modules.
+7. Minor garbled character encoding issues exist in inline code comments and GUI text labels, which do not interfere with core program logic.
 
-- 多个脚本包含硬编码路径，例如 `C:\Users\22748\Desktop\chuanshu`。在其他机器运行前，需要把 `qianduan.py`、`get_ip.py`、`cloudsstorm/Infs/Topology/yml.py` 中的绝对路径改为当前项目路径。
-- `1_a.py` 中硬编码了一个 C 端地址 `35.76.1.177:6000`，实际部署时需要改为当前接收端地址，或改造成命令行参数。
-- 仓库中包含 `cloudsstorm/Infs/Topology/*/id_rsa` 等私钥文件。正式提交或共享前应删除并轮换相关密钥。
-- `cloudsstorm/Infs/Topology/venv/` 是已生成的虚拟环境，不建议纳入版本管理。
-- `log/`、`cache/`、`__pycache__/`、`output.mp4` 等属于运行产物，可按需清理。
-- 当前代码没有自动化测试，也没有统一依赖锁定文件。
-- 部分源码注释和界面文本存在编码异常，但不影响主要逻辑阅读。
-
-## 建议的后续整理
-
-- 新增 `requirements.txt`。
-- 把绝对路径、云端 IP、文件名、端口统一迁移到配置文件或命令行参数。
-- 删除仓库中的私钥、日志、虚拟环境和缓存文件，并补充 `.gitignore`。
-- 将发送端、中转端、接收端协议封装成独立模块，减少 `1_a.py`、`b*.py`、`3_c.py` 之间的重复逻辑。
-- 为 `node_select.py` 的路径选择算法补充单元测试。
+## Recommended Subsequent Code Refactoring Tasks
+1. Create a standardized `requirements.txt` file to lock all Python dependency versions
+2. Migrate all hardcoded absolute file paths, cloud public IP addresses, default filenames, and TCP port numbers into unified configuration files or parseable command-line arguments
+3. Remove sensitive private keys, runtime logs, virtual environments, and cache folders from version control; add a complete `.gitignore` template
+4. Encapsulate sender, relay, and receiver transmission communication protocols into reusable independent modules to eliminate duplicate logic across `1_a.py`, all `b*.py` variants, and `3_c.py`
+5. Develop unit test cases to validate the correctness of the path planning algorithm inside `node_select.py`
